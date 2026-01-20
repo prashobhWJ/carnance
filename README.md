@@ -1,6 +1,6 @@
-# Carnance API
+# Wordjog Lead routing API
 
-FastAPI-based REST API framework for reading data from PostgreSQL and creating records in a CRM system.
+FastAPI-based REST API framework for reading data about leads and routing it to appropriate sales representatives in CRM systems.
 
 ## Twenty CRM Routing Example
 
