@@ -93,20 +93,23 @@ Request → API Endpoint → Service → Database (SQLAlchemy queries)
 
 ## Setup
 
-### Option 1: Using pyproject.toml (Recommended)
-
+### Using pyproject.toml
+Please install uv first: https://docs.astral.sh/uv/installation/
 1. **Install the project in editable mode:**
+
+Or using `uv` (faster):
+   ```bash
+   uv venv
+   uv sync
+   ```
+   Or
+   Using `pip` (slower):
    ```bash
    pip install -e .
    ```
-   
-   Or using `uv` (faster):
-   ```bash
-   uv pip install -e .
-   ```
 
 2. **Configure application settings:**
-   - Copy `config.yaml.example` to `config.yaml`
+   - Update `config.yaml`
    - Update with your database, CRM API, and LLM API credentials
 
 3. **Run the application:**
@@ -117,22 +120,6 @@ Request → API Endpoint → Service → Database (SQLAlchemy queries)
    Or using the module directly:
    ```bash
    python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-   ```
-
-### Option 2: Using requirements.txt
-
-1. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Configure application settings:**
-   - Copy `config.yaml.example` to `config.yaml`
-   - Update with your database, CRM API, and LLM API credentials
-
-3. **Run the application:**
-   ```bash
-   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    ```
 
 ## Usage Examples
