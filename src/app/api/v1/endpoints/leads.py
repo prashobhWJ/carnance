@@ -8,12 +8,13 @@ from typing import Optional
 from app.core.dependencies import get_db
 from app.services.lead_service import LeadService
 from app.utils.logging import get_logger
+from app.schemas.leads import LeadListResponse, LeadDetail, LeadSyncResponse
 
 logger = get_logger(__name__)
 router = APIRouter()
 
 
-@router.get("/leads")
+@router.get("/leads", response_model=LeadListResponse)
 async def get_leads(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -59,7 +60,7 @@ async def get_leads(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/leads/{lead_id}")
+@router.get("/leads/{lead_id}", response_model=LeadDetail)
 async def get_lead(
     lead_id: str,
     db: Session = Depends(get_db)
@@ -117,7 +118,7 @@ async def get_lead(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/leads/sync")
+@router.post("/leads/sync", response_model=LeadSyncResponse)
 async def sync_leads_to_crm(
     skip: int = Query(0, ge=0),
     limit: Optional[int] = Query(None, ge=1, le=1000),
@@ -147,7 +148,7 @@ async def sync_leads_to_crm(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/leads/{lead_id}/sync")
+@router.post("/leads/{lead_id}/sync", response_model=LeadSyncResponse)
 async def sync_lead_to_crm(
     lead_id: str,
     db: Session = Depends(get_db)

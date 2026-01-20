@@ -1,7 +1,7 @@
 """
 Base schema classes
 """
-from pydantic import BaseModel as PydanticBaseModel
+from pydantic import BaseModel as PydanticBaseModel, ConfigDict
 from datetime import datetime
 from typing import Optional
 
@@ -9,9 +9,10 @@ from typing import Optional
 class BaseSchema(PydanticBaseModel):
     """Base schema with common configuration"""
     
-    class Config:
-        from_attributes = True  # Allows ORM mode (formerly orm_mode)
-        populate_by_name = True
+    model_config = ConfigDict(
+        from_attributes=True,  # Allows ORM mode (formerly orm_mode)
+        populate_by_name=True
+    )
 
 
 class TimestampSchema(BaseSchema):

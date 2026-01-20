@@ -1,51 +1,15 @@
 """
 Twenty CRM specific models and utilities
 """
-from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Tuple
-
-
-class TwentyCRMName(BaseModel):
-    """Name structure for Twenty CRM"""
-    firstName: str
-    lastName: str
-
-
-class TwentyCRMEmails(BaseModel):
-    """Email structure for Twenty CRM"""
-    primaryEmail: str
-    additionalEmails: Optional[List[str]] = None
-
-
-class TwentyCRMLink(BaseModel):
-    """Link structure for Twenty CRM"""
-    primaryLinkLabel: str = ""
-    primaryLinkUrl: str = ""
-    secondaryLinks: List[Dict[str, Any]] = []
-
-
-class TwentyCRMPhones(BaseModel):
-    """Phone structure for Twenty CRM"""
-    primaryPhoneNumber: str
-    primaryPhoneCallingCode: Optional[str] = None
-    primaryPhoneCountryCode: Optional[str] = None
-    additionalPhones: List[Dict[str, Any]] = []
-
-
-class TwentyCRMPersonCreate(BaseModel):
-    """Model for creating a person in Twenty CRM"""
-    name: TwentyCRMName
-    emails: TwentyCRMEmails
-    linkedinLink: Optional[TwentyCRMLink] = None
-    xLink: Optional[TwentyCRMLink] = None
-    phones: Optional[TwentyCRMPhones] = None
-
-
-class TwentyCRMTaskCreate(BaseModel):
-    """Model for creating a task in Twenty CRM"""
-    title: str
-    status: str = "BACKLOG"
-    assigneeId: Optional[str] = None  # Person ID to assign the task to
+from app.schemas.twenty_crm import (
+    TwentyCRMName,
+    TwentyCRMEmails,
+    TwentyCRMLink,
+    TwentyCRMPhones,
+    TwentyCRMPersonCreate,
+    TwentyCRMTaskCreate
+)
 
 
 def parse_phone_number(phone: str, country_code: Optional[str] = None) -> Tuple[str, Optional[str], Optional[str]]:
@@ -150,12 +114,13 @@ def parse_phone_number(phone: str, country_code: Optional[str] = None) -> Tuple[
 def lead_to_twenty_crm(lead) -> Dict[str, Any]:
     """
     Convert a Lead database model to Twenty CRM format.
+    Uses Pydantic schemas for validation.
     
     Args:
         lead: Lead model instance from database
     
     Returns:
-        Dictionary in Twenty CRM format
+        Dictionary in Twenty CRM format (validated by TwentyCRMPersonCreate schema)
     """
     # Parse name
     first_name = lead.first_name or ""
@@ -174,54 +139,56 @@ def lead_to_twenty_crm(lead) -> Dict[str, Any]:
         country_code=lead_country_code
     )
     
-    # Build the Twenty CRM payload - matching exact format from curl example
-    payload = {
-        "name": {
-            "firstName": first_name or "Unknown",
-            "lastName": last_name or "Unknown"
-        },
-        "emails": {
-            "primaryEmail": lead.email or "",
-            "additionalEmails": None
-        },
-        "linkedinLink": {
-            "primaryLinkLabel": "",
-            "primaryLinkUrl": "",
-            "secondaryLinks": []
-        },
-        "xLink": {
-            "primaryLinkLabel": "",
-            "primaryLinkUrl": "",
-            "secondaryLinks": []
-        }
-    }
+    # Build schema objects for validation
+    name = TwentyCRMName(
+        firstName=first_name or "Unknown",
+        lastName=last_name or "Unknown"
+    )
     
-    # Add phone if available
-    # Note: Twenty CRM prefers unformatted numbers to avoid conflicts
-    if phone_number and calling_code and country_code:
-        # Send digits only to avoid formatting conflicts with country code inference
-        # Twenty CRM will format it based on the country code
-        payload["phones"] = {
-            "primaryPhoneNumber": phone_number,  # Send digits only, no formatting
-            "primaryPhoneCallingCode": calling_code,
-            "primaryPhoneCountryCode": country_code,
-            "additionalPhones": []
-        }
-    elif phone_number:
-        # If we have a number but no country info, send it as-is
-        payload["phones"] = {
-            "primaryPhoneNumber": phone_number,
-            "primaryPhoneCallingCode": calling_code,
-            "primaryPhoneCountryCode": country_code,
-            "additionalPhones": []
-        }
+    emails = TwentyCRMEmails(
+        primaryEmail=lead.email or "",
+        additionalEmails=None
+    )
     
-    return payload
+    linkedin_link = TwentyCRMLink(
+        primaryLinkLabel="",
+        primaryLinkUrl="",
+        secondaryLinks=[]
+    )
+    
+    x_link = TwentyCRMLink(
+        primaryLinkLabel="",
+        primaryLinkUrl="",
+        secondaryLinks=[]
+    )
+    
+    # Build phones if available
+    phones = None
+    if phone_number:
+        phones = TwentyCRMPhones(
+            primaryPhoneNumber=phone_number,
+            primaryPhoneCallingCode=calling_code,
+            primaryPhoneCountryCode=country_code,
+            additionalPhones=[]
+        )
+    
+    # Create and validate the person schema
+    person_create = TwentyCRMPersonCreate(
+        name=name,
+        emails=emails,
+        linkedinLink=linkedin_link,
+        xLink=x_link,
+        phones=phones
+    )
+    
+    # Return as dict (Pydantic model_dump)
+    return person_create.model_dump(exclude_none=False)
 
 
 def lead_to_task_data(lead, person_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Convert a Lead to a task data structure for Twenty CRM.
+    Uses Pydantic schemas for validation.
     Task name will be the lead's full name.
     
     Args:
@@ -229,7 +196,7 @@ def lead_to_task_data(lead, person_id: Optional[str] = None) -> Dict[str, Any]:
         person_id: Optional person ID to link the task to
     
     Returns:
-        Dictionary in Twenty CRM task format matching curl example
+        Dictionary in Twenty CRM task format (validated by TwentyCRMTaskCreate schema)
     """
     # Use full name or construct from first/last name
     task_name = lead.full_name or ""
@@ -243,23 +210,17 @@ def lead_to_task_data(lead, person_id: Optional[str] = None) -> Dict[str, Any]:
         else:
             task_name = lead.email or lead.lead_id or "Unknown Lead"
     
-    # Task data matching the curl format
-    # Based on curl example: {"status": "BACKLOG"}
-    # But we need to add the task name/title
-    task_data = {
-        "status": "BACKLOG"
-    }
+    # Create and validate the task schema
+    task_create = TwentyCRMTaskCreate(
+        title=task_name,
+        status="BACKLOG",
+        assigneeId=person_id
+    )
     
-    # Add task title/name - try common field names
-    # Some APIs use "title", others use "name" or "subject"
-    task_data["title"] = task_name
-    
-    # Link task to person if person_id is provided
-    # Try common field names for linking to person
+    # Return as dict (Pydantic model_dump)
+    # Note: We also add personId for backward compatibility if person_id is provided
+    task_dict = task_create.model_dump(exclude_none=True)
     if person_id:
-        # Try assigneeId (most common for task assignment)
-        task_data["assigneeId"] = person_id
-        # Also try personId as alternative (for linking)
-        task_data["personId"] = person_id
+        task_dict["personId"] = person_id
     
-    return task_data
+    return task_dict
