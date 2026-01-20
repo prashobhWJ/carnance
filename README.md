@@ -2,6 +2,10 @@
 
 FastAPI-based REST API framework for reading data from PostgreSQL and creating records in a CRM system.
 
+## Business Summary
+
+The Wordjog Lead Routing API is an intelligent lead management and distribution system that leverages artificial intelligence to automatically match incoming leads with the most appropriate sales agents based on agent expertise, specialization, workload, and lead characteristics, significantly reducing manual routing overhead while improving conversion rates through optimal lead-to-agent alignment. The system seamlessly integrates PostgreSQL databases with Twenty CRM, providing automated synchronization of lead data, intelligent agent matching using LLM-powered analysis of agent profiles and lead requirements, and comprehensive API endpoints for lead management, enabling sales teams to focus on closing deals rather than administrative tasks while ensuring leads are routed to agents best positioned to convert them based on vehicle type preferences, geographic territories, communication styles, and experience levels, ultimately driving higher sales performance and operational efficiency through data-driven decision-making and scalable, type-safe architecture that minimizes errors and maximizes system reliability.
+
 ## Twenty CRM Routing Example
 
 The following diagram illustrates routing in action within Twenty CRM:
