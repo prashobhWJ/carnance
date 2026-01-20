@@ -57,9 +57,7 @@ src/
 │   └── utils/                  # Utility functions
 │       ├── __init__.py
 │       ├── logging.py         # Logging configuration
-│       ├── helpers.py          # General helper functions
 │       ├── exceptions.py       # Custom exception classes
-│       └── logging_example.py  # Logging usage examples
 │
 ├── requirements.txt            # Python dependencies
 ├── config.yaml                 # Application configuration (not in git)

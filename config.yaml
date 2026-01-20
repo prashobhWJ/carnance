@@ -10,7 +10,7 @@ api_v1_str: "/api/v1"
 database:
   server: "localhost"
   user: "wjadmuser01"
-  password: "myagentpwd579%"
+  password: "replaceme"
   db: "wjplanagent"
   port: "5432"
   schema: "carnance"        # PostgreSQL schema name (default: "public")
