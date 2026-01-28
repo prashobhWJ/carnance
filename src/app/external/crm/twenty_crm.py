@@ -301,6 +301,11 @@ def lead_to_task_data(
     # For now, we'll skip taskTargets in the creation payload
     task_targets = None
     
+    # Extract sales representative name from sales agent match
+    sales_representative_name = None
+    if sales_agent_match and sales_agent_match.get("selected_agent_name"):
+        sales_representative_name = sales_agent_match.get("selected_agent_name")
+    
     # Log sales agent match status for debugging
     if sales_agent_match:
         logger.info(
@@ -309,6 +314,8 @@ def lead_to_task_data(
             f"Has reasoning: {bool(sales_agent_match.get('reasoning'))}"
         )
         logger.debug(f"[dim]Full sales agent match data:[/dim] {sales_agent_match}")
+        if sales_representative_name:
+            logger.info(f"[cyan]salesrep field will be set to:[/cyan] {sales_representative_name}")
     else:
         logger.warning("[yellow]⚠️  No sales agent match data provided to task creation[/yellow]")
     
@@ -319,7 +326,8 @@ def lead_to_task_data(
         status="BACKLOG",
         assigneeId=None,  # assigneeId is for workspace member, not person
         bodyV2=body_v2,
-        taskTargets=None  # Cannot be set via REST API - must be linked separately
+        taskTargets=None,  # Cannot be set via REST API - must be linked separately
+        salesrep=sales_representative_name  # Sales representative name only
     )
     
     # Return as dict (Pydantic model_dump)
@@ -353,6 +361,7 @@ def lead_to_task_data(
     logger.info(f"[dim]  Status: {task_dict.get('status')}[/dim]")
     logger.info(f"[dim]  Has bodyV2: {bool(task_dict.get('bodyV2'))}[/dim]")
     logger.info(f"[dim]  taskTargets: Excluded (not supported via REST API)[/dim]")
+    logger.info(f"[dim]  salesrep: {task_dict.get('salesrep', 'Not set')}[/dim]")
     if task_dict.get('bodyV2'):
         body_v2_data = task_dict['bodyV2']
         if isinstance(body_v2_data, dict):

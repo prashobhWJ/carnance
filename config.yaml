@@ -25,7 +25,7 @@ database:
 crm:
   base_url: "http://localhost:3000"  # Twenty CRM base URL
   api_key: null  # Not used for Twenty CRM
-  api_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNWFlYmQxZS0xYzQ4LTQwYjMtODk0Ni00Nzk1YWU5YjM2OWMiLCJ0eXBlIjoiQVBJX0tFWSIsIndvcmtzcGFjZUlkIjoiZjVhZWJkMWUtMWM0OC00MGIzLTg5NDYtNDc5NWFlOWIzNjljIiwiaWF0IjoxNzY4NTc0NTgwLCJleHAiOjQ5MjIxNzQ1NzksImp0aSI6IjdjMzM4NTE0LTZkMGQtNDY0OS04YTA0LTcxYWE3ZmRkZDcwYyJ9.Mi9xGCajflfBeRAetukrCCGNap27W6xx51f6hSX7PRw"  # Bearer token for Twenty CRM
+  api_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjMTA2M2QyYy04M2M5LTQ5YjQtODk2ZC1lNzc1ZWIxYzkyYjgiLCJ0eXBlIjoiQVBJX0tFWSIsIndvcmtzcGFjZUlkIjoiYzEwNjNkMmMtODNjOS00OWI0LTg5NmQtZTc3NWViMWM5MmI4IiwiaWF0IjoxNzY5NTE1MTcxLCJleHAiOjQ5MjMxMTUxNzAsImp0aSI6IjdmNTYwNmUxLTdiOTYtNGQxYi1hNGQxLWM1MWQ4M2JiMjE5ZiJ9.KijCTF3DJLR07NDsjYwjiPtEJ-AGsFlIXFgr9raY5jw"
   timeout: 30
 
 # CORS origins (list of allowed origins)
@@ -39,11 +39,17 @@ security:
   algorithm: "HS256"
   access_token_expire_minutes: 30
 
-# LLM API configuration (OpenAI-compatible)
+# LLM API configuration (OpenAI-compatible or AWS Bedrock)
 llm:
-  base_url: "http://192.168.68.58:11434/v1"  # Base URL for OpenAI-compatible API (use http:// for local Ollama)
-  api_key: null  # API key for authentication
-  model: "gemma3:27b"  # Default model to use
+  #provider: "openai"  # "openai" or "bedrock"
+  #base_url: "http://192.168.68.58:11434/v1"  # Base URL for OpenAI-compatible API (use http:// for local Ollama)
+  #api_key: null  # API key for authentication (not used for Bedrock)
+  #model: "ministral-3:14b-instruct-2512-q8_0"  # Default model to use (OpenAI model name or Bedrock model ID)
+  provider: "bedrock"
+  bedrock_region: "us-east-1"
+  bedrock_model_id: "mistral.mistral-large-2402-v1:0" #"google.gemma-3-27b-it" #"mistral.mistral-7b-instruct-v0:2"
+  max_tokens: 8192
+  temperature: 0.7  
   timeout: 60  # Request timeout in seconds
   max_tokens: 2000  # Maximum tokens in response
   temperature: 0.3  # Temperature for response generation (0.0-2.0)
@@ -54,6 +60,10 @@ llm:
     # system_assistant: "v2"  # Use v2 for system assistant prompts
     # text_summarization: "v2"  # Use v2 for text summarization
     # lead_analysis: "v2"  # Use v2 for lead analysis
+  # Bedrock-specific settings (only used when provider: "bedrock")
+  # Uncomment and configure these when using Bedrock provider
+  # bedrock_region: "us-east-1"  # AWS region for Bedrock
+  # bedrock_model_id: "mistral.mistral-7b-instruct-v0:2"  # Bedrock model ID
 
 # Sales Agents configuration
 sales_agents:

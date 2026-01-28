@@ -1,0 +1,96 @@
+%% Architecture Diagram - Carnance LLM Service
+%% This diagram shows the architecture of the LLM service with support for both OpenAI-compatible APIs and AWS Bedrock
+
+graph TB
+    %% Configuration Layer
+    subgraph Config["Configuration Layer"]
+        ConfigYAML["config.yaml<br/>- LLM Provider Settings<br/>- Bedrock Region/Model<br/>- OpenAI Base URL<br/>- Max Tokens, Temperature"]
+        ConfigPy["config.py<br/>LLMConfig<br/>- provider: openai/bedrock<br/>- bedrock_region<br/>- bedrock_model_id<br/>- base_url, api_key<br/>- max_tokens, temperature"]
+        Settings["Settings Instance<br/>load_config()"]
+        
+        ConfigYAML -->|YAML Load| ConfigPy
+        ConfigPy -->|Pydantic Validation| Settings
+    end
+    
+    %% API Layer
+    subgraph API["API Layer"]
+        FastAPI["FastAPI Application<br/>main.py"]
+        LeadsEndpoint["/api/v1/leads<br/>leads.py<br/>- GET /leads<br/>- GET /leads/{id}<br/>- POST /leads/{id}/sync<br/>- POST /leads/{id}/match-agent"]
+    end
+    
+    %% Service Layer
+    subgraph Services["Service Layer"]
+        LeadService["LeadService<br/>lead_service.py<br/>- get_all_leads()<br/>- sync_lead_to_crm()<br/>- match_lead_to_sales_agent()"]
+        LLMService["LLMService<br/>llm_service.py<br/>- chat_completion()<br/>- simple_prompt()<br/>- match_lead_to_sales_agent()"]
+        PromptManager["PromptManager<br/>prompt_manager.py<br/>- get_prompt()<br/>- list_categories()<br/>- Version Management"]
+    end
+    
+    %% LLM Provider Abstraction
+    subgraph LLMProviders["LLM Provider Implementation"]
+        ProviderRouter["Provider Router<br/>chat_completion()<br/>Routes based on provider"]
+        
+        subgraph OpenAIProvider["OpenAI-Compatible Provider"]
+            HTTPClient["httpx.AsyncClient<br/>HTTP Requests"]
+            OpenAIAPI["OpenAI-Compatible API<br/>(Ollama, OpenAI, etc.)<br/>POST /chat/completions"]
+        end
+        
+        subgraph BedrockProvider["AWS Bedrock Provider"]
+            BedrockSession["aioboto3.Session<br/>AWS SDK"]
+            BedrockClient["bedrock-runtime Client<br/>invoke_model()"]
+            BedrockAPI["AWS Bedrock API<br/>Mistral Models<br/>invoke_model()"]
+            MessageConverter["_messages_to_bedrock_prompt()<br/>Convert OpenAI format<br/>to Mistral format"]
+        end
+    end
+    
+    %% External Services
+    subgraph External["External Services"]
+        CRMClient["CRMClient<br/>twenty_crm.py<br/>- create_record()<br/>- update_record()"]
+        TwentyCRM["Twenty CRM<br/>REST API"]
+        Database["PostgreSQL Database<br/>SQLAlchemy ORM<br/>Lead Model"]
+    end
+    
+    %% Data Flow
+    FastAPI --> LeadsEndpoint
+    LeadsEndpoint -->|Depends| LeadService
+    LeadService -->|Uses| LLMService
+    LeadService -->|Uses| CRMClient
+    LeadService -->|Queries| Database
+    
+    Settings -->|Provides Config| LLMService
+    Settings -->|Provides Config| LeadService
+    
+    LLMService -->|Loads| PromptManager
+    PromptManager -->|Reads| PromptsYAML["prompts.yaml<br/>- sales_agent_matching<br/>- sales_agent_context<br/>Versioned Prompts"]
+    
+    LLMService -->|Routes to| ProviderRouter
+    ProviderRouter -->|if provider='openai'| HTTPClient
+    ProviderRouter -->|if provider='bedrock'| BedrockSession
+    
+    HTTPClient -->|POST /chat/completions| OpenAIAPI
+    BedrockSession -->|Creates| BedrockClient
+    BedrockClient -->|Converts Messages| MessageConverter
+    MessageConverter -->|Formats Prompt| BedrockClient
+    BedrockClient -->|invoke_model()| BedrockAPI
+    
+    OpenAIAPI -->|JSON Response| HTTPClient
+    BedrockAPI -->|JSON Response| BedrockClient
+    HTTPClient -->|OpenAI Format| ProviderRouter
+    BedrockClient -->|Converts to OpenAI Format| ProviderRouter
+    
+    ProviderRouter -->|Standardized Response| LLMService
+    LLMService -->|Returns Result| LeadService
+    
+    CRMClient -->|REST API Calls| TwentyCRM
+    
+    %% Styling
+    classDef configClass fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef apiClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef serviceClass fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef providerClass fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef externalClass fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    
+    class ConfigYAML,ConfigPy,Settings configClass
+    class FastAPI,LeadsEndpoint apiClass
+    class LeadService,LLMService,PromptManager serviceClass
+    class ProviderRouter,HTTPClient,OpenAIAPI,BedrockSession,BedrockClient,BedrockAPI,MessageConverter providerClass
+    class CRMClient,TwentyCRM,Database externalClass

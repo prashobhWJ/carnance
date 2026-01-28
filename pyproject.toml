@@ -29,23 +29,19 @@ dependencies = [
     # FastAPI and server
     "fastapi==0.115.9",
     "uvicorn[standard]==0.30.6",
-    
     # Database
     "sqlalchemy==2.0.35",
     "psycopg2-binary==2.9.9",
     "alembic==1.13.2",
-    
     # Pydantic for data validation
     "pydantic==2.8.0",
-    
     # YAML configuration
     "pyyaml==6.0.1",
-    
     # HTTP client for external APIs
     "httpx==0.27.2",
-    
     # Rich logging for beautiful terminal output
     "rich==13.9.4",
+    "aioboto3>=15.5.0",
 ]
 
 [project.optional-dependencies]

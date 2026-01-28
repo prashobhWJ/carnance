@@ -1,0 +1,69 @@
+%% Sequence Diagram - LLM Request Flow
+%% Shows the request flow for both OpenAI and Bedrock providers
+
+sequenceDiagram
+    participant Client
+    participant API as FastAPI Endpoint
+    participant LeadService
+    participant LLMService
+    participant Config as Settings/Config
+    participant PromptMgr as PromptManager
+    participant ProviderRouter as Provider Router
+    participant OpenAI as OpenAI-Compatible API
+    participant Bedrock as AWS Bedrock API
+
+    Note over Client,Bedrock: Scenario 1: Match Lead to Sales Agent (Bedrock Provider)
+    
+    Client->>API: POST /api/v1/leads/{id}/match-agent
+    API->>LeadService: match_lead_to_sales_agent(lead_id)
+    LeadService->>LeadService: get_lead_by_id(lead_id)
+    LeadService->>LeadService: get_sales_agents()
+    
+    LeadService->>LLMService: match_lead_to_sales_agent(lead_data, agents)
+    LLMService->>Config: Get provider setting
+    Config-->>LLMService: provider="bedrock"
+    
+    LLMService->>PromptMgr: get_prompt("sales_agent_matching")
+    PromptMgr-->>LLMService: system_prompt, user_template
+    
+    LLMService->>LLMService: Format lead_info and agents
+    LLMService->>LLMService: Build messages array
+    
+    LLMService->>ProviderRouter: chat_completion(messages)
+    ProviderRouter->>ProviderRouter: Check provider="bedrock"
+    
+    ProviderRouter->>LLMService: _messages_to_bedrock_prompt(messages)
+    LLMService-->>ProviderRouter: Mistral-formatted prompt
+    
+    ProviderRouter->>Bedrock: invoke_model(modelId, body)
+    Note over Bedrock: AWS Credentials from<br/>Environment/IAM Role
+    Bedrock-->>ProviderRouter: Response with outputs[0].text
+    
+    ProviderRouter->>ProviderRouter: Convert to OpenAI format
+    ProviderRouter-->>LLMService: Standardized response
+    
+    LLMService->>LLMService: Parse JSON response
+    LLMService-->>LeadService: {selected_agent_id, confidence, reasoning}
+    LeadService-->>API: SalesAgentMatchResponse
+    API-->>Client: JSON Response
+    
+    Note over Client,Bedrock: Scenario 2: OpenAI-Compatible Provider Flow
+    
+    Client->>API: POST /api/v1/leads/{id}/match-agent
+    API->>LeadService: match_lead_to_sales_agent(lead_id)
+    LeadService->>LLMService: match_lead_to_sales_agent(lead_data, agents)
+    
+    LLMService->>Config: Get provider setting
+    Config-->>LLMService: provider="openai"
+    
+    LLMService->>ProviderRouter: chat_completion(messages)
+    ProviderRouter->>ProviderRouter: Check provider="openai"
+    
+    ProviderRouter->>OpenAI: POST /chat/completions
+    Note over OpenAI: OpenAI-compatible format<br/>(Ollama, OpenAI, etc.)
+    OpenAI-->>ProviderRouter: JSON Response
+    
+    ProviderRouter-->>LLMService: Standardized response
+    LLMService-->>LeadService: Result
+    LeadService-->>API: Response
+    API-->>Client: JSON Response

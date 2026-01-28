@@ -1,5 +1,5 @@
 """
-LLM Service for OpenAI-compatible API interactions
+LLM Service for OpenAI-compatible API interactions and AWS Bedrock
 """
 import httpx
 from typing import Dict, Any, Optional, List, AsyncGenerator
@@ -7,19 +7,32 @@ from app.core.config import settings
 from app.utils.logging import get_logger
 from app.utils.prompt_manager import get_prompt_manager
 import json
+import os
+
+# Import AWS SDK for Bedrock support
+try:
+    import aioboto3
+    BEDROCK_AVAILABLE = True
+except ImportError:
+    BEDROCK_AVAILABLE = False
 
 logger = get_logger(__name__)
+
+if not BEDROCK_AVAILABLE:
+    logger.warning("[yellow]⚠️  aioboto3 not installed. Bedrock provider will not be available.[/yellow]")
 
 
 class LLMService:
     """
-    Service for interacting with OpenAI-compatible LLM APIs.
-    Supports standard chat completions endpoint format.
+    Service for interacting with OpenAI-compatible LLM APIs or AWS Bedrock.
+    Supports standard chat completions endpoint format for OpenAI-compatible APIs.
+    Supports AWS Bedrock Mistral models with prompt-based format.
     Can use prompts from YAML files with versioning support.
     """
     
     def __init__(self):
-        self.base_url = settings.llm.base_url.rstrip('/')
+        self.provider = settings.llm.provider.lower() if hasattr(settings.llm, 'provider') else "openai"
+        self.base_url = settings.llm.base_url.rstrip('/') if settings.llm.base_url else None
         self.api_key = settings.llm.api_key
         self.default_model = settings.llm.model
         self.timeout = settings.llm.timeout
@@ -27,6 +40,17 @@ class LLMService:
         self.default_temperature = settings.llm.temperature
         self.default_stream = settings.llm.stream
         self.verify_ssl = settings.llm.verify_ssl
+        
+        # Bedrock-specific settings
+        self.bedrock_region = getattr(settings.llm, 'bedrock_region', None) or "us-east-1"
+        self.bedrock_model_id = getattr(settings.llm, 'bedrock_model_id', None) or self.default_model
+        
+        # Initialize Bedrock session if provider is bedrock
+        self._bedrock_session = None
+        if self.provider == "bedrock":
+            if not BEDROCK_AVAILABLE:
+                raise ImportError("aioboto3 is required for Bedrock provider. Install it with: pip install aioboto3")
+            self._bedrock_session = aioboto3.Session()
         
         # Initialize prompt manager if prompts file is configured
         self._prompt_manager = None
@@ -53,6 +77,142 @@ class LLMService:
         
         return headers
     
+    def _messages_to_bedrock_prompt(self, messages: List[Dict[str, str]]) -> str:
+        """
+        Convert OpenAI-style messages to Bedrock Mistral prompt format.
+        
+        Args:
+            messages: List of message dictionaries with 'role' and 'content' keys
+        
+        Returns:
+            Formatted prompt string for Bedrock Mistral models
+        """
+        prompt_parts = []
+        system_content = None
+        
+        # Collect system message if present
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_content = msg.get("content", "")
+                break
+        
+        # Process messages
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            
+            if role == "system":
+                # Skip system messages here, already collected above
+                continue
+            elif role == "user":
+                # Include system content in first user message if available
+                if system_content and not prompt_parts:
+                    user_prompt = f"{system_content}\n\n{content}"
+                else:
+                    user_prompt = content
+                prompt_parts.append(f"<s>[INST] {user_prompt} [/INST]")
+            elif role == "assistant":
+                prompt_parts.append(f"{content}</s>")
+        
+        # Join all parts
+        prompt = "".join(prompt_parts)
+        
+        # Ensure we have proper formatting
+        if not prompt.startswith("<s>[INST]"):
+            prompt = f"<s>[INST] {prompt} [/INST]"
+        
+        return prompt
+    
+    async def _bedrock_chat_completion(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Send a chat completion request to AWS Bedrock.
+        
+        Args:
+            messages: List of message dictionaries with 'role' and 'content' keys
+            model: Model ID to use (defaults to configured Bedrock model ID)
+            temperature: Sampling temperature (0.0-2.0, defaults to configured value)
+            max_tokens: Maximum tokens in response (defaults to configured value)
+            **kwargs: Additional parameters (ignored for Bedrock)
+        
+        Returns:
+            Dictionary containing the API response in OpenAI-compatible format
+        
+        Raises:
+            Exception: If the request fails
+        """
+        model_id = model or self.bedrock_model_id
+        temp = temperature if temperature is not None else self.default_temperature
+        max_toks = max_tokens if max_tokens is not None else self.default_max_tokens
+        
+        # Convert messages to Bedrock prompt format
+        prompt = self._messages_to_bedrock_prompt(messages)
+        
+        body = json.dumps({
+            "prompt": prompt,
+            "max_tokens": max_toks,
+            "temperature": temp
+        })
+        
+        try:
+            logger.debug(f"[cyan]Sending Bedrock request:[/cyan] {model_id}")
+            logger.debug(f"[dim]Region:[/dim] {self.bedrock_region}")
+            logger.debug(f"[dim]Messages:[/dim] {len(messages)} message(s)")
+            
+            async with self._bedrock_session.client(
+                'bedrock-runtime',
+                region_name=self.bedrock_region
+            ) as bedrock_client:
+                response = await bedrock_client.invoke_model(
+                    modelId=model_id,
+                    body=body,
+                    contentType='application/json',
+                    accept='application/json'
+                )
+                
+                # Read the response body (aioboto3 returns a StreamingBody)
+                response_body_bytes = await response['body'].read()
+                result = json.loads(response_body_bytes.decode('utf-8'))
+                
+                # Extract text from Bedrock response format
+                response_text = result.get('outputs', [{}])[0].get('text', '')
+                
+                # Convert to OpenAI-compatible format
+                openai_format_response = {
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": response_text
+                        },
+                        "finish_reason": "stop"
+                    }],
+                    "model": model_id,
+                    "usage": {
+                        "prompt_tokens": result.get('usage', {}).get('prompt_tokens', 0),
+                        "completion_tokens": result.get('usage', {}).get('completion_tokens', 0),
+                        "total_tokens": result.get('usage', {}).get('total_tokens', 0)
+                    }
+                }
+                
+                logger.info(
+                    f"[green]✅ Successfully received Bedrock response:[/green] "
+                    f"[cyan]{model_id}[/cyan]"
+                )
+                
+                return openai_format_response
+                
+        except Exception as e:
+            logger.error(f"[red]❌ Failed to get Bedrock response:[/red] {str(e)}")
+            logger.error(f"[dim]Model ID:[/dim] {model_id}")
+            logger.error(f"[dim]Region:[/dim] {self.bedrock_region}")
+            raise
+    
     async def chat_completion(
         self,
         messages: List[Dict[str, str]],
@@ -60,6 +220,7 @@ class LLMService:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         stream: Optional[bool] = None,
+        response_format: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -72,14 +233,32 @@ class LLMService:
             temperature: Sampling temperature (0.0-2.0, defaults to configured value)
             max_tokens: Maximum tokens in response (defaults to configured value)
             stream: Whether to stream the response (defaults to configured value)
+            response_format: Optional response format dict (e.g., {"type": "json_object"})
+                           to force JSON output format (not supported for Bedrock)
             **kwargs: Additional parameters to pass to the API
         
         Returns:
             Dictionary containing the API response
         
         Raises:
-            httpx.HTTPError: If the request fails
+            httpx.HTTPError: If the request fails (OpenAI provider)
+            Exception: If the request fails (Bedrock provider)
         """
+        # Route to appropriate provider
+        if self.provider == "bedrock":
+            if stream:
+                logger.warning("[yellow]⚠️  Streaming not yet supported for Bedrock provider[/yellow]")
+            if response_format:
+                logger.warning("[yellow]⚠️  response_format not supported for Bedrock provider[/yellow]")
+            return await self._bedrock_chat_completion(
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs
+            )
+        
+        # Default OpenAI-compatible provider
         url = f"{self.base_url}/chat/completions"
         headers = self._get_headers()
         
@@ -91,6 +270,10 @@ class LLMService:
             "stream": stream if stream is not None else self.default_stream,
             **kwargs
         }
+        
+        # Add response_format if provided (for JSON mode)
+        if response_format:
+            payload["response_format"] = response_format
         
         try:
             logger.debug(f"[cyan]Sending chat completion request to LLM:[/cyan] {url}")
@@ -427,7 +610,13 @@ class LLMService:
             f"[dim]Evaluating {len(sales_agents)} agents[/dim]"
         )
         
-        response = await self.chat_completion(messages=messages, model=model, **kwargs)
+        # Use JSON response format to ensure valid JSON output
+        response = await self.chat_completion(
+            messages=messages, 
+            model=model, 
+            response_format={"type": "json_object"},
+            **kwargs
+        )
         
         if "choices" in response and len(response["choices"]) > 0:
             response_text = response["choices"][0]["message"]["content"]
@@ -444,7 +633,77 @@ class LLMService:
                     response_text = response_text[:-3]
                 response_text = response_text.strip()
                 
-                result = json.loads(response_text)
+                # Clean JSON: Replace literal newlines and control characters in string values
+                # This handles cases where LLM returns multi-line strings without proper escaping
+                import re
+                
+                def clean_json_strings(text: str) -> str:
+                    """
+                    Clean JSON by escaping newlines and control characters in string values.
+                    Uses a state machine to properly identify string contexts.
+                    """
+                    result = []
+                    i = 0
+                    in_string = False
+                    escape_next = False
+                    
+                    while i < len(text):
+                        char = text[i]
+                        
+                        if escape_next:
+                            # Previous char was backslash, this char is escaped
+                            result.append(char)
+                            escape_next = False
+                        elif char == '\\':
+                            # Escape character
+                            result.append(char)
+                            escape_next = True
+                        elif char == '"' and not escape_next:
+                            # Toggle string state
+                            in_string = not in_string
+                            result.append(char)
+                        elif in_string:
+                            # We're inside a string value
+                            if char == '\n':
+                                result.append('\\n')
+                            elif char == '\r':
+                                result.append('\\r')
+                            elif char == '\t':
+                                result.append('\\t')
+                            elif ord(char) < 32 or (127 <= ord(char) <= 159):
+                                # Control character - remove it
+                                pass
+                            else:
+                                result.append(char)
+                        else:
+                            # Outside string - keep as is
+                            result.append(char)
+                        
+                        i += 1
+                    
+                    return ''.join(result)
+                
+                # Clean the JSON response
+                cleaned_response = clean_json_strings(response_text)
+                
+                # Try to parse the cleaned JSON
+                try:
+                    result = json.loads(cleaned_response)
+                except json.JSONDecodeError as parse_error:
+                    # If cleaning didn't work, log the error and try one more approach
+                    logger.warning(f"[yellow]⚠️  JSON cleaning failed, trying fallback approach...[/yellow]")
+                    # Fallback: try to extract JSON object using regex (less reliable but may work)
+                    json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                    if json_match:
+                        json_text = json_match.group(0)
+                        cleaned_json = clean_json_strings(json_text)
+                        try:
+                            result = json.loads(cleaned_json)
+                        except json.JSONDecodeError:
+                            logger.error(f"[red]❌ All JSON parsing attempts failed[/red]")
+                            raise parse_error
+                    else:
+                        raise parse_error
                 
                 # Log the selected sales person
                 selected_agent_name = result.get("selected_agent_name", result.get("selected_agent_id", "Unknown"))

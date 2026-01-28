@@ -41,10 +41,11 @@ class CRMConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    """LLM API configuration (OpenAI-compatible)"""
+    """LLM API configuration (OpenAI-compatible or AWS Bedrock)"""
+    provider: str = "openai"  # "openai" or "bedrock"
     base_url: str = "https://api.openai.com/v1"
     api_key: Optional[str] = None
-    model: str = "gpt-3.5-turbo"
+    model: str = "gpt-3.5-turbo"  # Model name (OpenAI) or model ID (Bedrock)
     timeout: int = 60
     max_tokens: int = 1000
     temperature: float = 0.7
@@ -52,6 +53,9 @@ class LLMConfig(BaseModel):
     verify_ssl: bool = True  # Verify SSL certificates (set to False for self-signed certs)
     prompts_file: Optional[str] = None  # Path to prompts.yaml (defaults to project root)
     prompt_versions: Optional[Dict[str, str]] = None  # Override default prompt versions per category
+    # Bedrock-specific settings
+    bedrock_region: Optional[str] = None  # AWS region for Bedrock (e.g., "us-east-1")
+    bedrock_model_id: Optional[str] = None  # Bedrock model ID (e.g., "mistral.mistral-7b-instruct-v0:2")
 
 
 class SecurityConfig(BaseModel):
